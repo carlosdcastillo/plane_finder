@@ -1,7 +1,7 @@
 plane_finder.py program 
 by Carlos D. Castillo
 
-Receives two point clouds and input and an output. Finds the largest upright
+Receives two point clouds an input and an output. Finds the largest upright
 plane and cleans it up of other junk.
 
 Usage:
