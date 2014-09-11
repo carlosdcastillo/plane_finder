@@ -2,40 +2,48 @@ import os
 import sys
 import math
 import random
+import itertools
 
-#Plane finder program. Receives two point clouds and input and an output. Finds
-#the largest upright plane and cleans it up of other junk.
-
-#Usage:
-#python plane_finder.py input.pcd output.pcd
-
-def read_pcd_header(data):
-    #Read until the end header of the PCD file, return the header and the data
-    fields = [ '#', 'VERSION', 'FIELDS', 'SIZE', 'TYPE', 'COUNT', 'WIDTH', 'HEIGHT', 'VIEWPOINT', 'POINTS', 'DATA']
-    for i,item in enumerate(data):
-        found = False
-        for f in fields:
-            if f in item:
-                found = True
-                break
-        if not found:
-            return (data[0:i],data[i:])
-    return (data,[])
-
+"""
+Plane finder program. Receives two point clouds and input and an output. Finds
+the largest upright plane and cleans it up of other junk.
+ 
+Usage:
+python plane_finder.py input.pcd output.pcd
+"""
+ 
+HEADER_FIELDS = ['#', 'VERSION', 'FIELDS', 'SIZE', 'TYPE', 'COUNT', 'WIDTH', 'HEIGHT', 'VIEWPOINT', 'POINTS', 'DATA']
+ 
+ 
+def isplit(pred, iterable):
+    a, b = itertools.tee(iterable, 2)
+    return (itertools.takewhile(pred, a), itertools.dropwhile(pred, b))
+ 
+ 
+def is_field(line):
+    try:
+        found = (field for field in HEADER_FIELDS if line.startswith(field)).next()
+        return True
+    except StopIteration:
+        return False
+ 
+ 
+def split_pcf(f):
+    return isplit(is_field, f)
+ 
 def read_pcd(filename):
-    #Read the PCD file, return the header and the data
-    f = open(filename)
-    l = f.readlines()
-    (h,l) = read_pcd_header(l)
-    point_cloud = []
-    for item_ in l:
-        item = item_.strip()
-        parts = [float(x) for x in item.split(' ')]
-        point_cloud.append(parts[0:4])
-    return (h,point_cloud)
+    "Read the PCD file, return the header and the data"
+    with open(filename) as f:
+        (h, l) = split_pcf(f)
+        point_cloud = []
+        for item in l:
+            item = item.strip().split()
+            parts = map(float, item)
+            point_cloud.append(parts[:4])
+    return (list(h), point_cloud)
 
 def write_pcd(filename,header,pcl):
-    #Write a PCD file, adjust the header with the number of points in the point cloud pcl
+    "Write a PCD file, adjust the header with the number of points in the point cloud pcl"
     f = open(filename,'w')
     for item in header:
         if 'POINTS' in item:
@@ -47,18 +55,20 @@ def write_pcd(filename,header,pcl):
     f.close()
 
 def cross(a, b):
-    #cross product of two vectors. The vector will be perpendicular to a and b
+    "cross product of two vectors. The vector will be perpendicular to a and b"
     c = [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]]
     return c
 
 def dot(a,b):
-    #dot product of two vectors
+    "dot product of two vectors"
     return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
 
 def compute_plane(points):
-    #This function receives three points and returns a [a,b,c,d] representation
-    #of a plane, where ax+by+cz+d = 0 and (a,b,c) are the normalized (unit
-    #length) normal
+    """
+    This function receives three points and returns a [a,b,c,d] representation
+    of a plane, where ax+by+cz+d = 0 and (a,b,c) are the normalized (unit
+    length) normal
+    """
     va = [points[0][0] - points[1][0],points[0][1] - points[1][1],points[0][2] - points[1][2]]
     vb = [points[0][0] - points[2][0],points[0][1] - points[2][1],points[0][2] - points[2][2]]
     normal = cross(va,vb)
@@ -69,8 +79,10 @@ def compute_plane(points):
     return [normal[0],normal[1],normal[2],-normal[0]*points[0][0]-normal[1]*points[0][1]-normal[2]*points[0][2]]
 
 def compute_distance(point,plane):
-    #This function receives a point and a plane and computes the point to plane
-    #distance
+    """
+    This function receives a point and a plane and computes the point to plane
+    distance
+    """
     (a,b,c,d) = plane
     num = abs(a*point[0]+b*point[1]+c*point[2]+d)
     denom = math.sqrt(a**2+b**2+c**2)
@@ -121,13 +133,16 @@ def drange(start, stop, step):
      	r += step
 
 def filter_frontal_plane(points,plane):
-    #This function will try to build a 2d histogram to filter out parts that are
-    #not part of the structure of the house. It will build a 2d histogram along
-    #2 dimensions up (the second dimension) and left-right (which is the cross
-    #product of normal of the plane and up.
+    """
+    This function will try to build a 2d histogram to filter out parts that are
+    not part of the structure of the house. It will build a 2d histogram along
+    2 dimensions up (the second dimension) and left-right (which is the cross
+    product of normal of the plane and up.
+    """
 
     #compute the l-r direction
     lr = cross(plane[0:3],[0,1,0])
+    print 'l-r orientation:'
     print lr
     mn0 = float('Inf')
     mx0 = -float('Inf')
@@ -162,9 +177,11 @@ def filter_frontal_plane(points,plane):
     return points_out
 
 def count_points(prj,points,x,xrng,y,yrng):
-    #Given a lr direction values and corresponding points, this counts the
-    #points that fall between x and x+xrng (for the lr direction) and y and
-    #y+yrng for the height
+    """
+    Given a lr direction values and corresponding points, this counts the
+    points that fall between x and x+xrng (for the lr direction) and y and
+    y+yrng for the height
+    """
     count = 0
     for prj,item in zip(prj,points):
         if prj>=x and prj<x+xrng and item[1]>=y and item[1]<y+yrng:
@@ -172,9 +189,11 @@ def count_points(prj,points,x,xrng,y,yrng):
     return count
 
 def get_points(prj,points,x,xrng,y,yrng):
-    #Given a lr direction values and corresponding points, this returs a list
-    #with the points that fall between x and x+xrng (for the lr direction) and
-    #y and y+yrng for the height
+    """
+    Given a lr direction values and corresponding points, this returs a list
+    with the points that fall between x and x+xrng (for the lr direction) and
+    y and y+yrng for the height
+    """
     points_out = []
     for prj,item in zip(prj,points):
         if prj>=x and prj<x+xrng and item[1]>=y and item[1]<y+yrng:
